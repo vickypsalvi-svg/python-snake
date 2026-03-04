@@ -1,105 +1,128 @@
+import pygame
 import random
-import curses
+import sys
 
-def main(stdscr):
-    # Initialize screen settings
-    curses.curs_set(0)
-    stdscr.nodelay(1)
-    stdscr.timeout(100)
+# Initialize Pygame
+pygame.init()
 
-    # Get window dimensions
-    sh, sw = stdscr.getmaxyx()
+# Set up the display
+WIDTH, HEIGHT = 600, 400
+CELL_SIZE = 20
+FPS = 15
 
-    # Create window
-    w = curses.newwin(sh, sw, 0, 0)
-    w.keypad(1)
-    w.timeout(100)
+# Colors
+BLACK = (0, 0, 0)
+WHITE = (255, 255, 255)
+GREEN = (0, 255, 0)
+RED = (255, 0, 0)
 
-    # Draw border
-    w.border(0)
+screen = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Snake Game")
+clock = pygame.time.Clock()
 
-    # Initial position of the snake
-    snk_y, snk_x = sh // 2, sw // 4
-    snake = [
-        [snk_y, snk_x],
-        [snk_y, snk_x - 1],
-        [snk_y, snk_x - 2]
-    ]
-
-    # Initial food position
-    food = [sh // 2, sw // 2]
-    w.addch(food[0], food[1], '*')
-
-    # Initial snake direction
-    key = curses.KEY_RIGHT
-
+def reset_game():
+    snake = [[WIDTH // 2, HEIGHT // 2], [WIDTH // 2 - CELL_SIZE, HEIGHT // 2], [WIDTH // 2 - 2 * CELL_SIZE, HEIGHT // 2]]
+    direction = "RIGHT"
+    food = get_random_food_pos(snake)
     score = 0
-    valid_keys = [curses.KEY_UP, curses.KEY_DOWN, curses.KEY_LEFT, curses.KEY_RIGHT]
+    return snake, direction, food, score
+
+def get_random_food_pos(snake):
+    while True:
+        pos = [random.randrange(0, WIDTH, CELL_SIZE), random.randrange(0, HEIGHT, CELL_SIZE)]
+        if pos not in snake:
+            return pos
+
+def game_over_screen(score):
+    font = pygame.font.SysFont(None, 48)
+    text = font.render(f"Game Over! Score: {score}", True, WHITE)
+    text_rect = text.get_rect(center=(WIDTH // 2, HEIGHT // 2 - 20))
+
+    font_small = pygame.font.SysFont(None, 32)
+    restart_text = font_small.render("Press SPACE to restart or ESC to quit", True, WHITE)
+    restart_rect = restart_text.get_rect(center=(WIDTH // 2, HEIGHT // 2 + 20))
+
+    screen.fill(BLACK)
+    screen.blit(text, text_rect)
+    screen.blit(restart_text, restart_rect)
+    pygame.display.flip()
+
+    waiting = True
+    while waiting:
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    waiting = False
+                if event.key == pygame.K_ESCAPE:
+                    pygame.quit()
+                    sys.exit()
+
+def main():
+    snake, direction, food, score = reset_game()
 
     while True:
-        # Show score
-        w.addstr(0, 2, f' Score: {score} ')
-
-        next_key = w.getch()
-
-        # Handle key press
-        if next_key in valid_keys:
-            # Prevent moving in the opposite direction
-            if key == curses.KEY_UP and next_key != curses.KEY_DOWN:
-                key = next_key
-            elif key == curses.KEY_DOWN and next_key != curses.KEY_UP:
-                key = next_key
-            elif key == curses.KEY_LEFT and next_key != curses.KEY_RIGHT:
-                key = next_key
-            elif key == curses.KEY_RIGHT and next_key != curses.KEY_LEFT:
-                key = next_key
+        for event in pygame.event.get():
+            if event.type == pygame.QUIT:
+                pygame.quit()
+                sys.exit()
+            if event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_UP and direction != "DOWN":
+                    direction = "UP"
+                if event.key == pygame.K_DOWN and direction != "UP":
+                    direction = "DOWN"
+                if event.key == pygame.K_LEFT and direction != "RIGHT":
+                    direction = "LEFT"
+                if event.key == pygame.K_RIGHT and direction != "LEFT":
+                    direction = "RIGHT"
 
         # Calculate new head position
-        new_head = [snake[0][0], snake[0][1]]
+        head = list(snake[0])
+        if direction == "UP":
+            head[1] -= CELL_SIZE
+        if direction == "DOWN":
+            head[1] += CELL_SIZE
+        if direction == "LEFT":
+            head[0] -= CELL_SIZE
+        if direction == "RIGHT":
+            head[0] += CELL_SIZE
 
-        if key == curses.KEY_DOWN:
-            new_head[0] += 1
-        elif key == curses.KEY_UP:
-            new_head[0] -= 1
-        elif key == curses.KEY_LEFT:
-            new_head[1] -= 1
-        elif key == curses.KEY_RIGHT:
-            new_head[1] += 1
+        # Check for collisions
+        if (head[0] < 0 or head[0] >= WIDTH or
+            head[1] < 0 or head[1] >= HEIGHT or
+            head in snake):
+            game_over_screen(score)
+            snake, direction, food, score = reset_game()
+            continue
 
-        # Check for collision with walls or self
-        if (new_head[0] in [0, sh - 1] or
-            new_head[1] in [0, sw - 1] or
-            new_head in snake):
-            # Game Over
-            msg = f"Game Over! Final Score: {score}"
-            w.addstr(sh // 2, (sw - len(msg)) // 2, msg)
-            w.refresh()
-            curses.napms(3000)
-            break
+        snake.insert(0, head)
 
-        # Move snake
-        snake.insert(0, new_head)
-
-        # Check if snake eats food
-        if snake[0] == food:
+        # Check for eating food
+        if head == food:
             score += 1
-            food = None
-            while food is None:
-                # Generate new food coordinates
-                nf = [
-                    random.randint(1, sh - 2),
-                    random.randint(1, sw - 2)
-                ]
-                # Ensure food doesn't spawn on the snake
-                food = nf if nf not in snake else None
-            w.addch(food[0], food[1], '*')
+            food = get_random_food_pos(snake)
         else:
-            # Remove tail if no food eaten
-            tail = snake.pop()
-            w.addch(tail[0], tail[1], ' ')
+            snake.pop()
 
-        # Draw new head
-        w.addch(snake[0][0], snake[0][1], '#')
+        # Drawing
+        screen.fill(BLACK)
+
+        # Draw food
+        pygame.draw.rect(screen, RED, (food[0], food[1], CELL_SIZE, CELL_SIZE))
+
+        # Draw snake
+        for segment in snake:
+            pygame.draw.rect(screen, GREEN, (segment[0], segment[1], CELL_SIZE, CELL_SIZE))
+
+        # Draw score
+        font = pygame.font.SysFont(None, 36)
+        score_text = font.render(f"Score: {score}", True, WHITE)
+        screen.blit(score_text, (10, 10))
+
+        pygame.display.flip()
+        clock.tick(FPS)
 
 if __name__ == "__main__":
-    curses.wrapper(main)
+    main()
